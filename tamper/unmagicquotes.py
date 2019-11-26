@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2019 sqlmap developers (http://sqlmap.org/)
 See the file 'LICENSE' for copying permission
 """
 
 import re
 
+from lib.core.compat import xrange
 from lib.core.enums import PRIORITY
 
 __priority__ = PRIORITY.NORMAL
@@ -25,7 +26,7 @@ def tamper(payload, **kwargs):
         * http://shiflett.org/blog/2006/jan/addslashes-versus-mysql-real-escape-string
 
     >>> tamper("1' AND 1=1")
-    '1%bf%27-- '
+    '1%bf%27-- -'
     """
 
     retVal = payload
@@ -46,7 +47,7 @@ def tamper(payload, **kwargs):
             _ = re.sub(r"(?i)\s*(AND|OR)[\s(]+([^\s]+)\s*(=|LIKE)\s*\2", "", retVal)
             if _ != retVal:
                 retVal = _
-                retVal += "-- "
+                retVal += "-- -"
             elif not any(_ in retVal for _ in ('#', '--', '/*')):
-                retVal += "-- "
+                retVal += "-- -"
     return retVal

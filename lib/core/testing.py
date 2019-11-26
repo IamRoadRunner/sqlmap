@@ -1,30 +1,44 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2019 sqlmap developers (http://sqlmap.org/)
 See the file 'LICENSE' for copying permission
 """
 
+from __future__ import division
+
 import codecs
 import doctest
+import logging
 import os
+import random
 import re
 import shutil
+import socket
+import sqlite3
 import sys
 import tempfile
+import threading
 import time
 import traceback
 
 from extra.beep.beep import beep
+from extra.vulnserver import vulnserver
 from lib.controller.controller import start
+from lib.core.common import clearColors
 from lib.core.common import clearConsoleLine
 from lib.core.common import dataToStdout
-from lib.core.common import getUnicode
 from lib.core.common import randomStr
 from lib.core.common import readXmlFile
+from lib.core.common import shellExec
+from lib.core.compat import round
+from lib.core.compat import xrange
+from lib.core.convert import getUnicode
 from lib.core.data import conf
+from lib.core.data import kb
 from lib.core.data import logger
 from lib.core.data import paths
+from lib.core.data import queries
 from lib.core.enums import MKSTEMP_PREFIX
 from lib.core.exception import SqlmapBaseException
 from lib.core.exception import SqlmapNotVulnerableException
@@ -42,11 +56,128 @@ class Failures(object):
     failedTraceBack = None
 
 _failures = Failures()
+_rand = 0
+
+def vulnTest():
+    """
+    Runs the testing against 'vulnserver'
+    """
+
+    TESTS = (
+        ("-r <request> --flush-session", ("CloudFlare",)),
+        ("-u <url> --flush-session --encoding=ascii --forms --crawl=2 --banner", ("total of 2 targets", "might be injectable", "Type: UNION query", "banner: '3")),
+        ("-u <url> --flush-session --data='{\"id\": 1}' --banner", ("might be injectable", "3 columns", "Payload: {\"id\"", "Type: boolean-based blind", "Type: time-based blind", "Type: UNION query", "banner: '3")),
+        ("-u <url> --flush-session --data='<root><param name=\"id\" value=\"1*\"/></root>' --union-char=1 --mobile --banner --smart", ("might be injectable", "Payload: <root><param name=\"id\" value=\"1", "Type: boolean-based blind", "Type: time-based blind", "Type: UNION query", "banner: '3")),
+        ("-u <url> --flush-session --method=PUT --data='a=1&b=2&c=3&id=1' --skip-static --dump -T users --start=1 --stop=2", ("might be injectable", "Parameter: id (PUT)", "Type: boolean-based blind", "Type: time-based blind", "Type: UNION query", "2 entries")),
+        ("-u <url> --flush-session -H 'id: 1*' --tables", ("might be injectable", "Parameter: id #1* ((custom) HEADER)", "Type: boolean-based blind", "Type: time-based blind", "Type: UNION query", " users ")),
+        ("-u <url> --flush-session --banner --invalid-logical --technique=B --test-filter='OR boolean' --tamper=space2dash", ("banner: '3", " LIKE ")),
+        ("-u <url> --flush-session --cookie=\"PHPSESSID=d41d8cd98f00b204e9800998ecf8427e; id=1*; id2=2\" --tables --union-cols=3", ("might be injectable", "Cookie #1* ((custom) HEADER)", "Type: boolean-based blind", "Type: time-based blind", "Type: UNION query", " users ")),
+        ("-u <url> --flush-session --null-connection --technique=B --tamper=between,randomcase --banner", ("NULL connection is supported with HEAD method", "banner: '3")),
+        ("-u <url> --flush-session --parse-errors --test-filter=\"subquery\" --eval=\"import hashlib; id2=2; id3=hashlib.md5(id.encode()).hexdigest()\" --referer=\"localhost\"", ("might be injectable", ": syntax error", "back-end DBMS: SQLite", "WHERE or HAVING clause (subquery")),
+        ("-u <url> --banner --schema --dump -T users --binary-fields=surname --where \"id>3\"", ("banner: '3", "INTEGER", "TEXT", "id", "name", "surname", "2 entries", "6E616D6569736E756C6C")),
+        ("-u <url> --flush-session --all", ("5 entries", "Type: boolean-based blind", "Type: time-based blind", "Type: UNION query", "luther", "blisset", "fluffy", "179ad45c6ce2cb97cf1029e212046e81", "NULL", "nameisnull", "testpass")),
+        ("-u <url> -z \"tec=B\" --hex --fresh-queries --threads=4 --sql-query=\"SELECT * FROM users\"", ("SELECT * FROM users [5]", "nameisnull")),
+        ("-u '<url>&echo=foobar*' --flush-session", ("might be vulnerable to cross-site scripting",)),
+        ("-u '<url>&query=*' --flush-session --technique=Q --banner", ("Title: SQLite inline queries", "banner: '3")),
+        ("-d <direct> --flush-session --dump -T users --binary-fields=name --where \"id=3\"", ("7775", "179ad45c6ce2cb97cf1029e212046e81 (testpass)",)),
+        ("-d <direct> --flush-session --banner --schema --sql-query=\"SELECT 987654321\"", ("banner: '3", "INTEGER", "TEXT", "id", "name", "surname", "[*] 987654321",)),
+    )
+
+    retVal = True
+    count = 0
+    address, port = "127.0.0.10", random.randint(1025, 65535)
+
+    def _thread():
+        vulnserver.init(quiet=True)
+        vulnserver.run(address=address, port=port)
+
+    thread = threading.Thread(target=_thread)
+    thread.daemon = True
+    thread.start()
+
+    while True:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.connect((address, port))
+            break
+        except:
+            time.sleep(1)
+
+    handle, database = tempfile.mkstemp(suffix=".sqlite")
+    os.close(handle)
+
+    with sqlite3.connect(database) as conn:
+        c = conn.cursor()
+        c.executescript(vulnserver.SCHEMA)
+
+    handle, request = tempfile.mkstemp(suffix=".req")
+    os.close(handle)
+
+    open(request, "w+").write("POST / HTTP/1.0\nHost: %s:%s\n\nid=1\n" % (address, port))
+
+    url = "http://%s:%d/?id=1" % (address, port)
+    direct = "sqlite3://%s" % database
+
+    for options, checks in TESTS:
+        status = '%d/%d (%d%%) ' % (count, len(TESTS), round(100.0 * count / len(TESTS)))
+        dataToStdout("\r[%s] [INFO] complete: %s" % (time.strftime("%X"), status))
+
+        cmd = "%s %s %s --batch" % (sys.executable, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "sqlmap.py")), options.replace("<url>", url).replace("<direct>", direct).replace("<request>", request))
+        output = shellExec(cmd)
+
+        if not all(check in output for check in checks):
+            dataToStdout("---\n\n$ %s\n" % cmd)
+            dataToStdout("%s---\n" % clearColors(output))
+            retVal = False
+
+        count += 1
+
+    clearConsoleLine()
+    if retVal:
+        logger.info("vuln test final result: PASSED")
+    else:
+        logger.error("vuln test final result: FAILED")
+
+    return retVal
+
+def dirtyPatchRandom():
+    """
+    Unifying random generated data across different Python versions
+    """
+
+    def _lcg():
+        global _rand
+        a = 1140671485
+        c = 128201163
+        m = 2 ** 24
+        _rand = (a * _rand + c) % m
+        return _rand
+
+    def _randint(a, b):
+        _ = a + (_lcg() % (b - a + 1))
+        return _
+
+    def _choice(seq):
+        return seq[_randint(0, len(seq) - 1)]
+
+    def _sample(population, k):
+        return [_choice(population) for _ in xrange(k)]
+
+    def _seed(seed):
+        global _rand
+        _rand = seed
+
+    random.choice = _choice
+    random.randint = _randint
+    random.sample = _sample
+    random.seed = _seed
 
 def smokeTest():
     """
     Runs the basic smoke testing of a program
     """
+
+    dirtyPatchRandom()
 
     retVal = True
     count, length = 0, 0
@@ -71,21 +202,47 @@ def smokeTest():
                 try:
                     __import__(path)
                     module = sys.modules[path]
-                except Exception, msg:
+                except Exception as ex:
                     retVal = False
                     dataToStdout("\r")
-                    errMsg = "smoke test failed at importing module '%s' (%s):\n%s" % (path, os.path.join(root, filename), msg)
+                    errMsg = "smoke test failed at importing module '%s' (%s):\n%s" % (path, os.path.join(root, filename), ex)
                     logger.error(errMsg)
                 else:
-                    # Run doc tests
-                    # Reference: http://docs.python.org/library/doctest.html
-                    (failure_count, test_count) = doctest.testmod(module)
+                    logger.setLevel(logging.CRITICAL)
+                    kb.smokeMode = True
+
+                    (failure_count, _) = doctest.testmod(module)
+
+                    kb.smokeMode = False
+                    logger.setLevel(logging.INFO)
+
                     if failure_count > 0:
                         retVal = False
 
                 count += 1
                 status = '%d/%d (%d%%) ' % (count, length, round(100.0 * count / length))
                 dataToStdout("\r[%s] [INFO] complete: %s" % (time.strftime("%X"), status))
+
+    def _(node):
+        for __ in dir(node):
+            if not __.startswith('_'):
+                candidate = getattr(node, __)
+                if isinstance(candidate, str):
+                    if '\\' in candidate:
+                        try:
+                            re.compile(candidate)
+                        except:
+                            errMsg = "smoke test failed at compiling '%s'" % candidate
+                            logger.error(errMsg)
+                            raise
+                else:
+                    _(candidate)
+
+    for dbms in queries:
+        try:
+            _(queries[dbms])
+        except:
+            retVal = False
 
     clearConsoleLine()
     if retVal:
@@ -96,7 +253,7 @@ def smokeTest():
     return retVal
 
 def adjustValueType(tagName, value):
-    for family in optDict.keys():
+    for family in optDict:
         for name, type_ in optDict[family].items():
             if type(type_) == tuple:
                 type_ = type_[0]
@@ -271,10 +428,10 @@ def runCase(parse):
         result = start()
     except KeyboardInterrupt:
         pass
-    except SqlmapBaseException, e:
-        handled_exception = e
-    except Exception, e:
-        unhandled_exception = e
+    except SqlmapBaseException as ex:
+        handled_exception = ex
+    except Exception as ex:
+        unhandled_exception = ex
     finally:
         sys.stdout.seek(0)
         console = sys.stdout.read()
@@ -319,7 +476,7 @@ def replaceVars(item, vars_):
     retVal = item
 
     if item and vars_:
-        for var in re.findall("\$\{([^}]+)\}", item):
+        for var in re.findall(r"\$\{([^}]+)\}", item):
             if var in vars_:
                 retVal = retVal.replace("${%s}" % var, vars_[var])
 

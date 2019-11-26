@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2019 sqlmap developers (http://sqlmap.org/)
 See the file 'LICENSE' for copying permission
 """
 
@@ -9,9 +9,10 @@ import re
 
 from lib.core.common import Backend
 from lib.core.common import Format
-from lib.core.common import getUnicode
 from lib.core.common import hashDBRetrieve
 from lib.core.common import hashDBWrite
+from lib.core.compat import xrange
+from lib.core.convert import getUnicode
 from lib.core.data import conf
 from lib.core.data import kb
 from lib.core.data import logger
@@ -40,19 +41,21 @@ class Fingerprint(GenericFingerprint):
             return None
 
         # Reference: https://downloads.mysql.com/archives/community/
+        # Reference: https://dev.mysql.com/doc/relnotes/mysql/<major>.<minor>/en/
+
         versions = (
             (32200, 32235),  # MySQL 3.22
             (32300, 32359),  # MySQL 3.23
             (40000, 40032),  # MySQL 4.0
             (40100, 40131),  # MySQL 4.1
-            (50000, 50096),  # MySQL 5.0
-            (50100, 50172),  # MySQL 5.1
+            (50000, 50097),  # MySQL 5.0
+            (50100, 50174),  # MySQL 5.1
             (50400, 50404),  # MySQL 5.4
-            (50500, 50558),  # MySQL 5.5
-            (50600, 50638),  # MySQL 5.6
-            (50700, 50720),  # MySQL 5.7
+            (50500, 50562),  # MySQL 5.5
+            (50600, 50648),  # MySQL 5.6
+            (50700, 50730),  # MySQL 5.7
             (60000, 60014),  # MySQL 6.0
-            (80000, 80003),  # MySQL 8.0
+            (80000, 80021),  # MySQL 8.0
         )
 
         index = -1
@@ -124,13 +127,14 @@ class Fingerprint(GenericFingerprint):
             value += "\n%scomment injection fingerprint: %s" % (blank, comVer)
 
         if kb.bannerFp:
-            banVer = kb.bannerFp["dbmsVersion"] if "dbmsVersion" in kb.bannerFp else None
+            banVer = kb.bannerFp.get("dbmsVersion")
 
-            if banVer and re.search(r"-log$", kb.data.banner):
-                banVer += ", logging enabled"
+            if banVer:
+                if banVer and re.search(r"-log$", kb.data.banner or ""):
+                    banVer += ", logging enabled"
 
-            banVer = Format.getDbms([banVer] if banVer else None)
-            value += "\n%sbanner parsing fingerprint: %s" % (blank, banVer)
+                banVer = Format.getDbms([banVer])
+                value += "\n%sbanner parsing fingerprint: %s" % (blank, banVer)
 
         htmlErrorFp = Format.getErrorParsedDBMSes()
 

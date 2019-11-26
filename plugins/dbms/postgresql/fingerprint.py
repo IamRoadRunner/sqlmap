@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2019 sqlmap developers (http://sqlmap.org/)
 See the file 'LICENSE' for copying permission
 """
 
@@ -45,9 +45,11 @@ class Fingerprint(GenericFingerprint):
         value += "active fingerprint: %s" % actVer
 
         if kb.bannerFp:
-            banVer = kb.bannerFp["dbmsVersion"] if 'dbmsVersion' in kb.bannerFp else None
-            banVer = Format.getDbms([banVer])
-            value += "\n%sbanner parsing fingerprint: %s" % (blank, banVer)
+            banVer = kb.bannerFp.get("dbmsVersion")
+
+            if banVer:
+                banVer = Format.getDbms([banVer])
+                value += "\n%sbanner parsing fingerprint: %s" % (blank, banVer)
 
         htmlErrorFp = Format.getErrorParsedDBMSes()
 
@@ -73,7 +75,7 @@ class Fingerprint(GenericFingerprint):
         infoMsg = "testing %s" % DBMS.PGSQL
         logger.info(infoMsg)
 
-        result = inject.checkBooleanExpression("[RANDNUM]::int=[RANDNUM]")
+        result = inject.checkBooleanExpression("QUOTE_IDENT(NULL) IS NULL")
 
         if result:
             infoMsg = "confirming %s" % DBMS.PGSQL
@@ -97,8 +99,10 @@ class Fingerprint(GenericFingerprint):
             infoMsg = "actively fingerprinting %s" % DBMS.PGSQL
             logger.info(infoMsg)
 
-            if inject.checkBooleanExpression("XMLTABLE(NULL) IS NULL"):
-                Backend.setVersion(">= 10.0")
+            if inject.checkBooleanExpression("SHA256(NULL) IS NULL"):
+                Backend.setVersion(">= 11.0")
+            elif inject.checkBooleanExpression("XMLTABLE(NULL) IS NULL"):
+                Backend.setVersionList([">= 10.0", "< 11.0"])
             elif inject.checkBooleanExpression("SIND(0)=0"):
                 Backend.setVersionList([">= 9.6.0", "< 10.0"])
             elif inject.checkBooleanExpression("TO_JSONB(1) IS NOT NULL"):

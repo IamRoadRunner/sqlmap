@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2019 sqlmap developers (http://sqlmap.org/)
 See the file 'LICENSE' for copying permission
 """
 
@@ -21,7 +21,7 @@ def checkDependencies():
             if dbmsName in (DBMS.MSSQL, DBMS.SYBASE):
                 __import__("_mssql")
 
-                import pymssql
+                pymssql = __import__("pymssql")
                 if not hasattr(pymssql, "__version__") or pymssql.__version__ < "1.0.2":
                     warnMsg = "'%s' third-party library must be " % data[1]
                     warnMsg += "version >= 1.0.2 to work properly. "
@@ -65,7 +65,7 @@ def checkDependencies():
     except ImportError:
         warnMsg = "sqlmap requires 'python-impacket' third-party library for "
         warnMsg += "out-of-band takeover feature. Download from "
-        warnMsg += "'http://code.google.com/p/impacket/'"
+        warnMsg += "'https://github.com/coresecurity/impacket'"
         logger.warn(warnMsg)
         missing_libraries.add('python-impacket')
 
@@ -76,13 +76,13 @@ def checkDependencies():
     except ImportError:
         warnMsg = "sqlmap requires 'python-ntlm' third-party library "
         warnMsg += "if you plan to attack a web application behind NTLM "
-        warnMsg += "authentication. Download from 'http://code.google.com/p/python-ntlm/'"
+        warnMsg += "authentication. Download from 'https://github.com/mullender/python-ntlm'"
         logger.warn(warnMsg)
         missing_libraries.add('python-ntlm')
 
     try:
         __import__("websocket.ABNF")
-        debugMsg = "'python websocket-client' library is found"
+        debugMsg = "'websocket-client' library is found"
         logger.debug(debugMsg)
     except ImportError:
         warnMsg = "sqlmap requires 'websocket-client' third-party library "
@@ -90,6 +90,26 @@ def checkDependencies():
         warnMsg += "Download from 'https://pypi.python.org/pypi/websocket-client/'"
         logger.warn(warnMsg)
         missing_libraries.add('websocket-client')
+
+    try:
+        __import__("tkinter")
+        debugMsg = "'tkinter' library is found"
+        logger.debug(debugMsg)
+    except ImportError:
+        warnMsg = "sqlmap requires 'tkinter' library "
+        warnMsg += "if you plan to run a GUI"
+        logger.warn(warnMsg)
+        missing_libraries.add('tkinter')
+
+    try:
+        __import__("tkinter.ttk")
+        debugMsg = "'tkinter.ttk' library is found"
+        logger.debug(debugMsg)
+    except ImportError:
+        warnMsg = "sqlmap requires 'tkinter.ttk' library "
+        warnMsg += "if you plan to run a GUI"
+        logger.warn(warnMsg)
+        missing_libraries.add('tkinter.ttk')
 
     if IS_WIN:
         try:
@@ -101,7 +121,7 @@ def checkDependencies():
             warnMsg += "be able to take advantage of the sqlmap TAB "
             warnMsg += "completion and history support features in the SQL "
             warnMsg += "shell and OS shell. Download from "
-            warnMsg += "'http://ipython.scipy.org/moin/PyReadline/Intro'"
+            warnMsg += "'https://pypi.org/project/pyreadline/'"
             logger.warn(warnMsg)
             missing_libraries.add('python-pyreadline')
 

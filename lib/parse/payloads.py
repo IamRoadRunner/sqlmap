@@ -1,15 +1,17 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2019 sqlmap developers (http://sqlmap.org/)
 See the file 'LICENSE' for copying permission
 """
 
 import os
+import re
 
 from xml.etree import ElementTree as et
 
 from lib.core.common import getSafeExString
+from lib.core.compat import xrange
 from lib.core.data import conf
 from lib.core.data import paths
 from lib.core.datatype import AttribDict
@@ -17,11 +19,14 @@ from lib.core.exception import SqlmapInstallationException
 from lib.core.settings import PAYLOAD_XML_FILES
 
 def cleanupVals(text, tag):
+    if tag == "clause" and '-' in text:
+        text = re.sub(r"(\d+)-(\d+)", lambda match: ','.join(str(_) for _ in xrange(int(match.group(1)), int(match.group(2)) + 1)), text)
+
     if tag in ("clause", "where"):
         text = text.split(',')
 
-    if isinstance(text, basestring):
-        text = int(text) if text.isdigit() else text
+    if hasattr(text, "isdigit") and text.isdigit():
+        text = int(text)
 
     elif isinstance(text, list):
         count = 0
@@ -74,7 +79,7 @@ def parseXmlNode(node):
 def loadBoundaries():
     try:
         doc = et.parse(paths.BOUNDARIES_XML)
-    except Exception, ex:
+    except Exception as ex:
         errMsg = "something appears to be wrong with "
         errMsg += "the file '%s' ('%s'). Please make " % (paths.BOUNDARIES_XML, getSafeExString(ex))
         errMsg += "sure that you haven't made any changes to it"
@@ -89,7 +94,7 @@ def loadPayloads():
 
         try:
             doc = et.parse(payloadFilePath)
-        except Exception, ex:
+        except Exception as ex:
             errMsg = "something appears to be wrong with "
             errMsg += "the file '%s' ('%s'). Please make " % (payloadFilePath, getSafeExString(ex))
             errMsg += "sure that you haven't made any changes to it"

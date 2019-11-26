@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2019 sqlmap developers (http://sqlmap.org/)
 See the file 'LICENSE' for copying permission
 """
 
 import re
 
 from lib.core.common import randomRange
+from lib.core.compat import xrange
 from lib.core.data import kb
 from lib.core.enums import PRIORITY
 
@@ -25,6 +26,7 @@ def tamper(payload, **kwargs):
         * MySQL 4, 5.0 and 5.5
         * Oracle 10g
         * PostgreSQL 8.3, 8.4, 9.0
+        * SQLite 3
 
     Notes:
         * Useful to bypass very weak and bespoke web application firewalls
@@ -34,16 +36,22 @@ def tamper(payload, **kwargs):
     >>> import random
     >>> random.seed(0)
     >>> tamper('INSERT')
-    'INseRt'
+    'InSeRt'
+    >>> tamper('f()')
+    'f()'
+    >>> tamper('function()')
+    'FuNcTiOn()'
+    >>> tamper('SELECT id FROM `user`')
+    'SeLeCt id FrOm `user`'
     """
 
     retVal = payload
 
     if payload:
-        for match in re.finditer(r"\b[A-Za-z_]+\b", retVal):
+        for match in re.finditer(r"\b[A-Za-z_]{2,}\b", retVal):
             word = match.group()
 
-            if word.upper() in kb.keywords:
+            if (word.upper() in kb.keywords and re.search(r"(?i)[`\"'\[]%s[`\"'\]]" % word, retVal) is None) or ("%s(" % word) in payload:
                 while True:
                     _ = ""
 

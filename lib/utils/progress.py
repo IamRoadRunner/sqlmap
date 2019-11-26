@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2019 sqlmap developers (http://sqlmap.org/)
 See the file 'LICENSE' for copying permission
 """
 
+from __future__ import division
+
 import time
 
-from lib.core.common import getUnicode
 from lib.core.common import dataToStdout
+from lib.core.convert import getUnicode
 from lib.core.data import conf
 from lib.core.data import kb
 
@@ -29,7 +31,7 @@ class ProgressBar(object):
 
     def _convertSeconds(self, value):
         seconds = value
-        minutes = seconds / 60
+        minutes = seconds // 60
         seconds = seconds - (minutes * 60)
 
         return "%.2d:%.2d" % (minutes, seconds)
